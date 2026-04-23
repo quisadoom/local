@@ -1,0 +1,8 @@
+- `[x]` 1. `app.py` 경로 및 UI 개선 작업 수행
+  - `[x]` 하드코딩된 파일 경로(`c:/dashboard/`)를 상대 경로(`os.path.dirname(__file__)`)로 변경 (C:\dashboard로 이동 후 개선)
+  - `[x]` 대시보드 전반에 Custom CSS 적용 (여백, 배경색, 폰트 개선)
+  - `[x]` Plotly 차트 색상 테마 및 디자인 개선
+- `[x]` 2. 로컬 서버 구동 및 테스트
+  - `[x]` `streamlit run app.py` 실행
+  - `[x]` 웹 브라우저를 통해 정상 렌더링 확인
+- `[ ]` 3. Walkthrough 작성 및 후속 논의(담론) 안내
