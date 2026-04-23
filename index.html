@@ -15,15 +15,6 @@
         requirements: ["pandas", "matplotlib", "plotly", "wordcloud", "xlrd"],
         entrypoint: "app.py",
         files: {
-          "ponty_data.db": {
-            url: "./ponty_data.db",
-          },
-          "퐁티_1_300.xls": {
-            url: "./퐁티_1_300.xls",
-          },
-          "퐁티_301_600.xls": {
-            url: "./퐁티_301_600.xls",
-          },
           "app.py": `import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -35,7 +26,6 @@ import matplotlib.font_manager as fm
 import re
 from collections import Counter
 import os
-import sqlite3
 
 # 1. 전역 설정 (Global Settings)
 st.set_page_config(page_title="Merleau-Ponty Dashboard", layout="wide", page_icon="🚗")
@@ -50,36 +40,25 @@ PLOTLY_FONT = dict(family="Malgun Gothic, Arial")
 # 2. 데이터 처리 모듈
 @st.cache_data(show_spinner=False)
 def validate_and_load_data():
-    db_path = './ponty_data.db'
-    
-    # 1. DB 파일이 있으면 DB에서 읽기
-    if os.path.exists(db_path):
-        try:
-            conn = sqlite3.connect(db_path)
-            df = pd.read_sql("SELECT * FROM research_data", conn)
-            conn.close()
-            return df
-        except Exception as e:
-            pass
-            
-    # 2. DB가 없거나 실패하면 엑셀 파일(상대 경로)에서 직접 읽기
-    file1 = './퐁티_1_300.xls'
-    file2 = './퐁티_301_600.xls'
+    file1 = 'c:/dashboard/퐁티_1_300.xls'
+    file2 = 'c:/dashboard/퐁티_301_600.xls'
     
     try:
+        # xlrd 엔진을 사용하여 구형 KCI 엑셀 형식을 안전하게 로드
         df1 = pd.read_excel(file1, engine='xlrd')
         df2 = pd.read_excel(file2, engine='xlrd')
         df = pd.concat([df1, df2], ignore_index=True)
         
-        # 컬럼명 공백 및 줄바꿈 정제
+        # 컬럼명 공백 및 줄바꿈 정제 (Clean Column Names)
         df.columns = df.columns.str.strip().str.replace('\\n', '')
         
+        # 논문명, 저자명을 기준으로 동일 문헌 중복 제거
         if '논문명' in df.columns and '저자명' in df.columns:
             df = df.drop_duplicates(subset=['논문명', '저자명'], keep='first')
-            
+        
         return df
     except Exception as e:
-        st.error(f"데이터 파일 로드 오류: {e}")
+        st.error(f"데이터 파일 확인 필드 오류: {e}")
         st.stop()
 
 @st.cache_data(show_spinner=False)
@@ -92,7 +71,7 @@ def preprocess_data(df):
     # (1) 발행연도 처리
     if '발행연도' in df.columns:
         df['발행연도'] = pd.to_numeric(df['발행연도'], errors='coerce')
-        df = df.dropna(subset=['발행연도'])
+        df = df.dropna(subset=['발행연도']) # 연도가 없는 논문은 추이에서 제외
         df['발행연도'] = df['발행연도'].astype(int)
     else:
         df['발행연도'] = 2000
@@ -118,6 +97,7 @@ def preprocess_data(df):
         if pd.isna(text):
             return []
         words = []
+        # 한국어 1글자 초과 명사만 추출
         for match in re.finditer(r'[가-힣]{2,}', str(text)):
             word = match.group()
             if word not in stopwords:
@@ -139,20 +119,37 @@ def render_tab1(df):
     yearly = df.groupby('발행연도').agg(논문수=('논문명', 'count'), 인용수=('인용된 총 횟수', 'sum')).reset_index()
     yearly = yearly.sort_values('발행연도')
     
+    # 이중축 그래프 (Plotly Subplots)
     fig = make_subplots(specs=[[{"secondary_y": True}]])
-    fig.add_trace(go.Bar(x=yearly['발행연도'], y=yearly['논문수'], name="발행된 논문 수", marker_color='rgba(55, 83, 109, 0.8)'), secondary_y=False)
-    fig.add_trace(go.Scatter(x=yearly['발행연도'], y=yearly['인용수'], name="총 피인용 수", mode='lines+markers', line=dict(color='#FF4B4B', width=3)), secondary_y=True)
     
-    fig.update_layout(title="시간 흐름에 따른 논문 발행 및 피인용수 추이", font=PLOTLY_FONT, hovermode="x unified", xaxis_title="발행 연도")
+    fig.add_trace(
+        go.Bar(x=yearly['발행연도'], y=yearly['논문수'], name="발행된 논문 수", marker_color='rgba(55, 83, 109, 0.8)'),
+        secondary_y=False,
+    )
+    fig.add_trace(
+        go.Scatter(x=yearly['발행연도'], y=yearly['인용수'], name="총 피인용 수", mode='lines+markers', line=dict(color='#FF4B4B', width=3)),
+        secondary_y=True,
+    )
+    
+    fig.update_layout(
+        title="시간 흐름에 따른 논문 발행 및 피인용수 추이", 
+        font=PLOTLY_FONT, 
+        hovermode="x unified",
+        xaxis_title="발행 연도"
+    )
     fig.update_yaxes(title_text="신규 발행 건수 (Bar)", secondary_y=False)
     fig.update_yaxes(title_text="인용된 총 횟수 (Line)", secondary_y=True)
     
     st.plotly_chart(fig, use_container_width=True)
 
+
 def render_tab2(df):
     st.subheader("🧭 Concept Map (핵심 경로)")
+    
+    # 모든 추출된 단어 리스트업
     all_words = []
-    for wl in df['저자키워드_추출']: all_words.extend(wl)
+    for wl in df['저자키워드_추출']:
+        all_words.extend(wl)
     
     if not all_words:
         st.warning("분석 가능한 한글 키워드가 충분하지 않습니다.")
@@ -162,32 +159,43 @@ def render_tab2(df):
     top15 = pd.DataFrame(word_counts.most_common(15), columns=['키워드', '빈도수'])
     
     col_bar, col_wc = st.columns(2)
+    
     with col_bar:
         st.markdown("##### 📌 상위 15개 한국어 핵심어 빈도")
         top15_rev = top15.sort_values("빈도수", ascending=True)
         fig = px.bar(top15_rev, x='빈도수', y='키워드', orientation='h', text='빈도수', color='빈도수', color_continuous_scale="Blues")
+        fig.update_traces(textposition='outside')
         fig.update_layout(font=PLOTLY_FONT, height=500, showlegend=False, coloraxis_showscale=False)
         st.plotly_chart(fig, use_container_width=True)
         
     with col_wc:
         st.markdown("##### ☁️ 핵심 개념어 워드클라우드")
+        font_path = "C:/Windows/Fonts/malgun.ttf" if os.path.exists("C:/Windows/Fonts/malgun.ttf") else None
+        
         try:
-            wc = WordCloud(width=600, height=500, background_color="white", colormap="viridis").generate_from_frequencies(word_counts)
+            # 워드클라우드 렌더링
+            wc = WordCloud(font_path=font_path, width=600, height=500, background_color="white", colormap="viridis").generate_from_frequencies(word_counts)
             fig_wc, ax = plt.subplots(figsize=(6, 5))
             ax.imshow(wc, interpolation="bilinear")
             ax.axis('off')
             st.pyplot(fig_wc)
         except Exception as e:
-            st.error("워드클라우드 생성 오류가 발생했습니다.")
+            st.error("워드클라우드를 생성하는 데 문제가 발생했습니다. 시스템에 한글 폰트가 설치되어 있는지 확인해주세요.")
+
 
 def render_tab3(df):
     st.subheader("👥 People & Journal (주변 시야)")
+    
     col_authors, col_journals = st.columns(2)
+    
     with col_authors:
         st.markdown("##### 🖋️ 최다 게재 연구자 순위 (Top 10)")
         authors = df['저자명'].value_counts().head(10).reset_index()
         authors.columns = ['연구자명', '논문 편수']
-        fig_auth = px.bar(authors.sort_values('논문 편수', ascending=True), x='논문 편수', y='연구자명', orientation='h', text='논문 편수', color_discrete_sequence=['#4BB543'])
+        fig_auth = px.bar(authors.sort_values('논문 편수', ascending=True), 
+                          x='논문 편수', y='연구자명', orientation='h', text='논문 편수',
+                          color_discrete_sequence=['#4BB543'])
+        fig_auth.update_traces(textposition='outside')
         fig_auth.update_layout(font=PLOTLY_FONT)
         st.plotly_chart(fig_auth, use_container_width=True)
         
@@ -199,10 +207,13 @@ def render_tab3(df):
         fig_jour.update_layout(font=PLOTLY_FONT)
         st.plotly_chart(fig_jour, use_container_width=True)
 
+
 def render_tab4(df):
     st.subheader("📚 Research Library (집중 분석)")
+    # 테이블에 출력할 핵심 항목 필터링
     display_cols = [c for c in ['발행연도', '논문명', '저자명', '학술지명', '인용된 총 횟수', '저자키워드'] if c in df.columns]
     
+    st.write("아래 리스트는 **발행연도 최신순 > 인용된 총 횟수 랭킹순**으로 정렬되어 있습니다. (테이블 헤더를 클릭하면 정렬 방향을 바꿀 수 있습니다)")
     view_df = df[display_cols].sort_values(by=['발행연도', '인용된 총 횟수'], ascending=[False, False])
     st.dataframe(view_df, use_container_width=True, height=400)
     
@@ -210,11 +221,13 @@ def render_tab4(df):
     st.markdown("##### 🔎 문헌별 요약 정보 (초록 검색창)")
     if '초록' in df.columns:
         search_kw = st.text_input('🔎 "논문명"이나 "저자명"을 검색하면 관련 논문의 상세 요약을 확인할 수 있습니다.', '')
+        
         if search_kw:
             matched = df[df['논문명'].str.contains(search_kw, na=False, case=False) | df['저자명'].str.contains(search_kw, na=False, case=False)]
             if matched.empty:
                 st.info("조건에 맞는 결과가 없습니다.")
             else:
+                st.write(f"총 **{len(matched)}**건의 논문이 검색되었습니다.")
                 for idx, row in matched.iterrows():
                     with st.expander(f"📖 {row['논문명']} - {row['저자명']} (인용 수: {row['인용된 총 횟수']})"):
                         abstract_text = row['초록'] if pd.notna(row['초록']) else "초록 정보가 기재되지 않은 문헌입니다."
@@ -229,16 +242,21 @@ def main():
     st.caption("한국연구재단(KCI) 데이터를 바탕으로 한 졸업 논문 예비탐색 네비게이션입니다.")
     st.markdown("---")
     
-    with st.spinner('문헌 데이터베이스를 불러오고 전처리하는 중입니다...'):
+    with st.spinner('문헌 데이버베이스를 불러오고 전처리하는 중입니다...'):
         raw_df = validate_and_load_data()
         df = preprocess_data(raw_df)
     
+    # 4개의 탭 레이아웃 생성
     t1, t2, t3, t4 = st.tabs(["📊 Total Insight", "🧭 Concept Map", "👥 People & Journal", "📚 Research Library"])
     
-    with t1: render_tab1(df)
-    with t2: render_tab2(df)
-    with t3: render_tab3(df)
-    with t4: render_tab4(df)
+    with t1:
+        render_tab1(df)
+    with t2:
+        render_tab2(df)
+    with t3:
+        render_tab3(df)
+    with t4:
+        render_tab4(df)
 
 if __name__ == "__main__":
     main()`,
@@ -268,7 +286,7 @@ def check_file(filename):
         
     print(f"{filename}: Unknown format")
 
-check_file("./퐁티_1_300.xls")`
+check_file("c:/dashboard/퐁티_1_300.xls")`
         },
       }, document.getElementById("root"));
     </script>
