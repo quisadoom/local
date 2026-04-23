@@ -1,357 +1,276 @@
+<!DOCTYPE html>
 <html>
-    <head>
-        <meta charset="utf-8">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <title>Philosophy Dashboard</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.31.0/build/stlite.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script src="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.31.0/build/stlite.js"></script>
+    <script>
+      stlite.mount({
+        requirements: ["pandas", "matplotlib", "plotly", "wordcloud", "xlrd"],
+        entrypoint: "app.py",
+        files: {
+          "ponty_data.db": {
+            url: "./ponty_data.db",
+          },
+          "퐁티_1_300.xls": {
+            url: "./퐁티_1_300.xls",
+          },
+          "퐁티_301_600.xls": {
+            url: "./퐁티_301_600.xls",
+          },
+          "app.py": `import streamlit as st
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+import re
+from collections import Counter
+import os
+import sqlite3
+
+# 1. 전역 설정 (Global Settings)
+st.set_page_config(page_title="Merleau-Ponty Dashboard", layout="wide", page_icon="🚗")
+
+# 마트플롯립(matplotlib) 한글 폰트 설정 (워드클라우드 등에서 깨짐 방지)
+plt.rcParams['font.family'] = 'Malgun Gothic'
+plt.rcParams['axes.unicode_minus'] = False
+
+# Plotly 기본 폰트 설정
+PLOTLY_FONT = dict(family="Malgun Gothic, Arial")
+
+# 2. 데이터 처리 모듈
+@st.cache_data(show_spinner=False)
+def validate_and_load_data():
+    db_path = './ponty_data.db'
+    
+    # 1. DB 파일이 있으면 DB에서 읽기
+    if os.path.exists(db_path):
+        try:
+            conn = sqlite3.connect(db_path)
+            df = pd.read_sql("SELECT * FROM research_data", conn)
+            conn.close()
+            return df
+        except Exception as e:
+            pass
+            
+    # 2. DB가 없거나 실패하면 엑셀 파일(상대 경로)에서 직접 읽기
+    file1 = './퐁티_1_300.xls'
+    file2 = './퐁티_301_600.xls'
+    
+    try:
+        df1 = pd.read_excel(file1, engine='xlrd')
+        df2 = pd.read_excel(file2, engine='xlrd')
+        df = pd.concat([df1, df2], ignore_index=True)
         
-            <script>function neighbourhoodHighlight(params) {
-  // console.log("in nieghbourhoodhighlight");
-  allNodes = nodes.get({ returnType: "Object" });
-  // originalNodes = JSON.parse(JSON.stringify(allNodes));
-  // if something is selected:
-  if (params.nodes.length > 0) {
-    highlightActive = true;
-    var i, j;
-    var selectedNode = params.nodes[0];
-    var degrees = 2;
-
-    // mark all nodes as hard to read.
-    for (let nodeId in allNodes) {
-      // nodeColors[nodeId] = allNodes[nodeId].color;
-      allNodes[nodeId].color = "rgba(200,200,200,0.5)";
-      if (allNodes[nodeId].hiddenLabel === undefined) {
-        allNodes[nodeId].hiddenLabel = allNodes[nodeId].label;
-        allNodes[nodeId].label = undefined;
-      }
-    }
-    var connectedNodes = network.getConnectedNodes(selectedNode);
-    var allConnectedNodes = [];
-
-    // get the second degree nodes
-    for (i = 1; i < degrees; i++) {
-      for (j = 0; j < connectedNodes.length; j++) {
-        allConnectedNodes = allConnectedNodes.concat(
-          network.getConnectedNodes(connectedNodes[j])
-        );
-      }
-    }
-
-    // all second degree nodes get a different color and their label back
-    for (i = 0; i < allConnectedNodes.length; i++) {
-      // allNodes[allConnectedNodes[i]].color = "pink";
-      allNodes[allConnectedNodes[i]].color = "rgba(150,150,150,0.75)";
-      if (allNodes[allConnectedNodes[i]].hiddenLabel !== undefined) {
-        allNodes[allConnectedNodes[i]].label =
-          allNodes[allConnectedNodes[i]].hiddenLabel;
-        allNodes[allConnectedNodes[i]].hiddenLabel = undefined;
-      }
-    }
-
-    // all first degree nodes get their own color and their label back
-    for (i = 0; i < connectedNodes.length; i++) {
-      // allNodes[connectedNodes[i]].color = undefined;
-      allNodes[connectedNodes[i]].color = nodeColors[connectedNodes[i]];
-      if (allNodes[connectedNodes[i]].hiddenLabel !== undefined) {
-        allNodes[connectedNodes[i]].label =
-          allNodes[connectedNodes[i]].hiddenLabel;
-        allNodes[connectedNodes[i]].hiddenLabel = undefined;
-      }
-    }
-
-    // the main node gets its own color and its label back.
-    // allNodes[selectedNode].color = undefined;
-    allNodes[selectedNode].color = nodeColors[selectedNode];
-    if (allNodes[selectedNode].hiddenLabel !== undefined) {
-      allNodes[selectedNode].label = allNodes[selectedNode].hiddenLabel;
-      allNodes[selectedNode].hiddenLabel = undefined;
-    }
-  } else if (highlightActive === true) {
-    // console.log("highlightActive was true");
-    // reset all nodes
-    for (let nodeId in allNodes) {
-      // allNodes[nodeId].color = "purple";
-      allNodes[nodeId].color = nodeColors[nodeId];
-      // delete allNodes[nodeId].color;
-      if (allNodes[nodeId].hiddenLabel !== undefined) {
-        allNodes[nodeId].label = allNodes[nodeId].hiddenLabel;
-        allNodes[nodeId].hiddenLabel = undefined;
-      }
-    }
-    highlightActive = false;
-  }
-
-  // transform the object into an array
-  var updateArray = [];
-  if (params.nodes.length > 0) {
-    for (let nodeId in allNodes) {
-      if (allNodes.hasOwnProperty(nodeId)) {
-        // console.log(allNodes[nodeId]);
-        updateArray.push(allNodes[nodeId]);
-      }
-    }
-    nodes.update(updateArray);
-  } else {
-    // console.log("Nothing was selected");
-    for (let nodeId in allNodes) {
-      if (allNodes.hasOwnProperty(nodeId)) {
-        // console.log(allNodes[nodeId]);
-        // allNodes[nodeId].color = {};
-        updateArray.push(allNodes[nodeId]);
-      }
-    }
-    nodes.update(updateArray);
-  }
-}
-
-function filterHighlight(params) {
-  allNodes = nodes.get({ returnType: "Object" });
-  // if something is selected:
-  if (params.nodes.length > 0) {
-    filterActive = true;
-    let selectedNodes = params.nodes;
-
-    // hiding all nodes and saving the label
-    for (let nodeId in allNodes) {
-      allNodes[nodeId].hidden = true;
-      if (allNodes[nodeId].savedLabel === undefined) {
-        allNodes[nodeId].savedLabel = allNodes[nodeId].label;
-        allNodes[nodeId].label = undefined;
-      }
-    }
-
-    for (let i=0; i < selectedNodes.length; i++) {
-      allNodes[selectedNodes[i]].hidden = false;
-      if (allNodes[selectedNodes[i]].savedLabel !== undefined) {
-        allNodes[selectedNodes[i]].label = allNodes[selectedNodes[i]].savedLabel;
-        allNodes[selectedNodes[i]].savedLabel = undefined;
-      }
-    }
-
-  } else if (filterActive === true) {
-    // reset all nodes
-    for (let nodeId in allNodes) {
-      allNodes[nodeId].hidden = false;
-      if (allNodes[nodeId].savedLabel !== undefined) {
-        allNodes[nodeId].label = allNodes[nodeId].savedLabel;
-        allNodes[nodeId].savedLabel = undefined;
-      }
-    }
-    filterActive = false;
-  }
-
-  // transform the object into an array
-  var updateArray = [];
-  if (params.nodes.length > 0) {
-    for (let nodeId in allNodes) {
-      if (allNodes.hasOwnProperty(nodeId)) {
-        updateArray.push(allNodes[nodeId]);
-      }
-    }
-    nodes.update(updateArray);
-  } else {
-    for (let nodeId in allNodes) {
-      if (allNodes.hasOwnProperty(nodeId)) {
-        updateArray.push(allNodes[nodeId]);
-      }
-    }
-    nodes.update(updateArray);
-  }
-}
-
-function selectNode(nodes) {
-  network.selectNodes(nodes);
-  neighbourhoodHighlight({ nodes: nodes });
-  return nodes;
-}
-
-function selectNodes(nodes) {
-  network.selectNodes(nodes);
-  filterHighlight({nodes: nodes});
-  return nodes;
-}
-
-function highlightFilter(filter) {
-  let selectedNodes = []
-  let selectedProp = filter['property']
-  if (filter['item'] === 'node') {
-    let allNodes = nodes.get({ returnType: "Object" });
-    for (let nodeId in allNodes) {
-      if (allNodes[nodeId][selectedProp] && filter['value'].includes((allNodes[nodeId][selectedProp]).toString())) {
-        selectedNodes.push(nodeId)
-      }
-    }
-  }
-  else if (filter['item'] === 'edge'){
-    let allEdges = edges.get({returnType: 'object'});
-    // check if the selected property exists for selected edge and select the nodes connected to the edge
-    for (let edge in allEdges) {
-      if (allEdges[edge][selectedProp] && filter['value'].includes((allEdges[edge][selectedProp]).toString())) {
-        selectedNodes.push(allEdges[edge]['from'])
-        selectedNodes.push(allEdges[edge]['to'])
-      }
-    }
-  }
-  selectNodes(selectedNodes)
-}</script>
-            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/dist/vis-network.min.css" integrity="sha512-WgxfT5LWjfszlPHXRmBWHkV2eceiWTOBvrKCNbdgDYTHrT2AeLCGbF4sZlZw3UMN3WtL0tGUoIAKsu8mllg/XA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/vis-network.min.js" integrity="sha512-LnvoEWDFrqGHlHmDD2101OrLcbsfkrzoSpvtSQtxK3RMnRV0eOkhhBN2dXHKRrUU8p2DGRTk35n4O8nWSVe1mQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-            
-            
-            
-            
-            
-            
-
+        # 컬럼명 공백 및 줄바꿈 정제
+        df.columns = df.columns.str.strip().str.replace('\\n', '')
         
-<center>
-<h1></h1>
-</center>
-
-<!-- <link rel="stylesheet" href="../node_modules/vis/dist/vis.min.css" type="text/css" />
-<script type="text/javascript" src="../node_modules/vis/dist/vis.js"> </script>-->
-        <link
-          href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta3/dist/css/bootstrap.min.css"
-          rel="stylesheet"
-          integrity="sha384-eOJMYsd53ii+scO/bJGFsiCZc+5NDVN2yr8+0RDqr0Ql0h+rP48ckxlpbzKgwra6"
-          crossorigin="anonymous"
-        />
-        <script
-          src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta3/dist/js/bootstrap.bundle.min.js"
-          integrity="sha384-JEW9xMcG8R+pH31jmWH6WWP0WintQrMb4s7ZOdauHnUtxwoG2vI5DkLtS3qm9Ekf"
-          crossorigin="anonymous"
-        ></script>
-
-
-        <center>
-          <h1></h1>
-        </center>
-        <style type="text/css">
-
-             #mynetwork {
-                 width: 100%;
-                 height: 450px;
-                 background-color: #FAF8FF;
-                 border: 1px solid lightgray;
-                 position: relative;
-                 float: left;
-             }
-
-             
-
-             
-
-             
-        </style>
-    </head>
-
-
-    <body>
-        <div class="card" style="width: 100%">
+        if '논문명' in df.columns and '저자명' in df.columns:
+            df = df.drop_duplicates(subset=['논문명', '저자명'], keep='first')
             
+        return df
+    except Exception as e:
+        st.error(f"데이터 파일 로드 오류: {e}")
+        st.stop()
+
+@st.cache_data(show_spinner=False)
+def preprocess_data(df):
+    """
+    데이터 정제 핵심 엔진: 결측치 보정, 형 변환, 조건부 형태소 분석
+    """
+    df = df.copy()
+
+    # (1) 발행연도 처리
+    if '발행연도' in df.columns:
+        df['발행연도'] = pd.to_numeric(df['발행연도'], errors='coerce')
+        df = df.dropna(subset=['발행연도'])
+        df['발행연도'] = df['발행연도'].astype(int)
+    else:
+        df['발행연도'] = 2000
+
+    # (2) 인용된 총 횟수 처리
+    if '인용된 총 횟수' in df.columns:
+        df['인용된 총 횟수'] = pd.to_numeric(df['인용된 총 횟수'], errors='coerce').fillna(0).astype(int)
+    else:
+        df['인용된 총 횟수'] = 0
+
+    # (3) 저자, 학술지명 결측치 보완
+    for col in ['저자명', '학술지명']:
+        if col in df.columns:
+            df[col] = df[col].fillna("미상")
             
-            <div id="mynetwork" class="card-body"></div>
-        </div>
-
+    # (4) 저자키워드 불용어 처리 (Stopwords Filtering)
+    stopwords = [
+        "연구", "분석", "고찰", "현상학", "메를로", "퐁티", "철학", "메를로퐁티",
+        "의미", "현대", "문제", "대한", "통한", "중심", "이해", "방법론", "사유"
+    ]
+    
+    def extract_keywords(text):
+        if pd.isna(text):
+            return []
+        words = []
+        for match in re.finditer(r'[가-힣]{2,}', str(text)):
+            word = match.group()
+            if word not in stopwords:
+                words.append(word)
+        return words
         
+    if '저자키워드' in df.columns:
+        df['저자키워드_추출'] = df['저자키워드'].apply(extract_keywords)
+    else:
+        df['저자키워드_추출'] = [[] for _ in range(len(df))]
         
+    return df
 
-        <script type="text/javascript">
+# 3. 사이트 컴포넌트(Tab 단위) 렌더링 모듈
+def render_tab1(df):
+    st.subheader("📊 Total Insight (주행 기록계)")
+    st.markdown("연구 담론의 **확산 시기(논문 발행 수)** 및 **학계 내 영향력(총 인용 수)** 트렌드입니다.")
+    
+    yearly = df.groupby('발행연도').agg(논문수=('논문명', 'count'), 인용수=('인용된 총 횟수', 'sum')).reset_index()
+    yearly = yearly.sort_values('발행연도')
+    
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(go.Bar(x=yearly['발행연도'], y=yearly['논문수'], name="발행된 논문 수", marker_color='rgba(55, 83, 109, 0.8)'), secondary_y=False)
+    fig.add_trace(go.Scatter(x=yearly['발행연도'], y=yearly['인용수'], name="총 피인용 수", mode='lines+markers', line=dict(color='#FF4B4B', width=3)), secondary_y=True)
+    
+    fig.update_layout(title="시간 흐름에 따른 논문 발행 및 피인용수 추이", font=PLOTLY_FONT, hovermode="x unified", xaxis_title="발행 연도")
+    fig.update_yaxes(title_text="신규 발행 건수 (Bar)", secondary_y=False)
+    fig.update_yaxes(title_text="인용된 총 횟수 (Line)", secondary_y=True)
+    
+    st.plotly_chart(fig, use_container_width=True)
 
-              // initialize global variables.
-              var edges;
-              var nodes;
-              var allNodes;
-              var allEdges;
-              var nodeColors;
-              var originalNodes;
-              var network;
-              var container;
-              var options, data;
-              var filter = {
-                  item : '',
-                  property : '',
-                  value : []
-              };
+def render_tab2(df):
+    st.subheader("🧭 Concept Map (핵심 경로)")
+    all_words = []
+    for wl in df['저자키워드_추출']: all_words.extend(wl)
+    
+    if not all_words:
+        st.warning("분석 가능한 한글 키워드가 충분하지 않습니다.")
+        return
+        
+    word_counts = Counter(all_words)
+    top15 = pd.DataFrame(word_counts.most_common(15), columns=['키워드', '빈도수'])
+    
+    col_bar, col_wc = st.columns(2)
+    with col_bar:
+        st.markdown("##### 📌 상위 15개 한국어 핵심어 빈도")
+        top15_rev = top15.sort_values("빈도수", ascending=True)
+        fig = px.bar(top15_rev, x='빈도수', y='키워드', orientation='h', text='빈도수', color='빈도수', color_continuous_scale="Blues")
+        fig.update_layout(font=PLOTLY_FONT, height=500, showlegend=False, coloraxis_showscale=False)
+        st.plotly_chart(fig, use_container_width=True)
+        
+    with col_wc:
+        st.markdown("##### ☁️ 핵심 개념어 워드클라우드")
+        try:
+            wc = WordCloud(width=600, height=500, background_color="white", colormap="viridis").generate_from_frequencies(word_counts)
+            fig_wc, ax = plt.subplots(figsize=(6, 5))
+            ax.imshow(wc, interpolation="bilinear")
+            ax.axis('off')
+            st.pyplot(fig_wc)
+        except Exception as e:
+            st.error("워드클라우드 생성 오류가 발생했습니다.")
 
-              
+def render_tab3(df):
+    st.subheader("👥 People & Journal (주변 시야)")
+    col_authors, col_journals = st.columns(2)
+    with col_authors:
+        st.markdown("##### 🖋️ 최다 게재 연구자 순위 (Top 10)")
+        authors = df['저자명'].value_counts().head(10).reset_index()
+        authors.columns = ['연구자명', '논문 편수']
+        fig_auth = px.bar(authors.sort_values('논문 편수', ascending=True), x='논문 편수', y='연구자명', orientation='h', text='논문 편수', color_discrete_sequence=['#4BB543'])
+        fig_auth.update_layout(font=PLOTLY_FONT)
+        st.plotly_chart(fig_auth, use_container_width=True)
+        
+    with col_journals:
+        st.markdown("##### 📓 주요 학술지 분포 (Top 10)")
+        journals = df['학술지명'].value_counts().head(10).reset_index()
+        journals.columns = ['학술지명', '비중']
+        fig_jour = px.pie(journals, names='학술지명', values='비중', hole=0.45)
+        fig_jour.update_layout(font=PLOTLY_FONT)
+        st.plotly_chart(fig_jour, use_container_width=True)
 
-              
+def render_tab4(df):
+    st.subheader("📚 Research Library (집중 분석)")
+    display_cols = [c for c in ['발행연도', '논문명', '저자명', '학술지명', '인용된 총 횟수', '저자키워드'] if c in df.columns]
+    
+    view_df = df[display_cols].sort_values(by=['발행연도', '인용된 총 횟수'], ascending=[False, False])
+    st.dataframe(view_df, use_container_width=True, height=400)
+    
+    st.markdown("---")
+    st.markdown("##### 🔎 문헌별 요약 정보 (초록 검색창)")
+    if '초록' in df.columns:
+        search_kw = st.text_input('🔎 "논문명"이나 "저자명"을 검색하면 관련 논문의 상세 요약을 확인할 수 있습니다.', '')
+        if search_kw:
+            matched = df[df['논문명'].str.contains(search_kw, na=False, case=False) | df['저자명'].str.contains(search_kw, na=False, case=False)]
+            if matched.empty:
+                st.info("조건에 맞는 결과가 없습니다.")
+            else:
+                for idx, row in matched.iterrows():
+                    with st.expander(f"📖 {row['논문명']} - {row['저자명']} (인용 수: {row['인용된 총 횟수']})"):
+                        abstract_text = row['초록'] if pd.notna(row['초록']) else "초록 정보가 기재되지 않은 문헌입니다."
+                        st.markdown(f"**학술지:** {row.get('학술지명', '미상')} ({row['발행연도']})")
+                        st.write(abstract_text)
+    else:
+        st.info("현재 로드된 데이터셋에는 '초록' 텍스트 컬럼이 존재하지 않습니다.")
 
-              // This method is responsible for drawing the graph, returns the drawn network
-              function drawGraph() {
-                  var container = document.getElementById('mynetwork');
+# 4. 앱 통합 메인 (Entry Point)
+def main():
+    st.title("🚗 모리스 메를로-퐁티 연구 대시보드")
+    st.caption("한국연구재단(KCI) 데이터를 바탕으로 한 졸업 논문 예비탐색 네비게이션입니다.")
+    st.markdown("---")
+    
+    with st.spinner('문헌 데이터베이스를 불러오고 전처리하는 중입니다...'):
+        raw_df = validate_and_load_data()
+        df = preprocess_data(raw_df)
+    
+    t1, t2, t3, t4 = st.tabs(["📊 Total Insight", "🧭 Concept Map", "👥 People & Journal", "📚 Research Library"])
+    
+    with t1: render_tab1(df)
+    with t2: render_tab2(df)
+    with t3: render_tab3(df)
+    with t4: render_tab4(df)
 
-                  
+if __name__ == "__main__":
+    main()`,
+          "check_format.py": `import pandas as pd
 
-                  // parsing and collecting nodes and edges from the python
-                  nodes = new vis.DataSet([{"color": "#97c2fc", "font": {"color": "#3F0099"}, "id": "\uc2e0\uccb4", "label": "\uc2e0\uccb4", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "#3F0099"}, "id": "\uc9c0\uac01", "label": "\uc9c0\uac01", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "#3F0099"}, "id": "\uc8fc\uccb4", "label": "\uc8fc\uccb4", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "#3F0099"}, "id": "\uc0c1\ud638", "label": "\uc0c1\ud638", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "#3F0099"}, "id": "\uacf5\uac04", "label": "\uacf5\uac04", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "#3F0099"}, "id": "\uac10\uac01", "label": "\uac10\uac01", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "#3F0099"}, "id": "\uc138\uacc4", "label": "\uc138\uacc4", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "#3F0099"}, "id": "\uc874\uc7ac", "label": "\uc874\uc7ac", "shape": "dot", "size": 10}]);
-                  edges = new vis.DataSet([{"from": "\uc2e0\uccb4", "title": "Co-occurrence: 30", "to": "\uc9c0\uac01", "value": 30, "width": 1}, {"from": "\uc2e0\uccb4", "title": "Co-occurrence: 20", "to": "\uc8fc\uccb4", "value": 20, "width": 1}, {"from": "\uc2e0\uccb4", "title": "Co-occurrence: 18", "to": "\uc0c1\ud638", "value": 18, "width": 1}, {"from": "\uc2e0\uccb4", "title": "Co-occurrence: 14", "to": "\uacf5\uac04", "value": 14, "width": 1}, {"from": "\uc2e0\uccb4", "title": "Co-occurrence: 12", "to": "\uac10\uac01", "value": 12, "width": 1}, {"from": "\uc2e0\uccb4", "title": "Co-occurrence: 12", "to": "\uc138\uacc4", "value": 12, "width": 1}, {"from": "\uc2e0\uccb4", "title": "Co-occurrence: 9", "to": "\uc874\uc7ac", "value": 9, "width": 1}, {"from": "\uc9c0\uac01", "title": "Co-occurrence: 21", "to": "\uacf5\uac04", "value": 21, "width": 1}, {"from": "\uc9c0\uac01", "title": "Co-occurrence: 16", "to": "\uac10\uac01", "value": 16, "width": 1}, {"from": "\uc9c0\uac01", "title": "Co-occurrence: 8", "to": "\uc0c1\ud638", "value": 8, "width": 1}, {"from": "\uc9c0\uac01", "title": "Co-occurrence: 8", "to": "\uc8fc\uccb4", "value": 8, "width": 1}, {"from": "\uc9c0\uac01", "title": "Co-occurrence: 7", "to": "\uc138\uacc4", "value": 7, "width": 1}, {"from": "\uc9c0\uac01", "title": "Co-occurrence: 2", "to": "\uc874\uc7ac", "value": 2, "width": 1}, {"from": "\uacf5\uac04", "title": "Co-occurrence: 6", "to": "\uac10\uac01", "value": 6, "width": 1}, {"from": "\uacf5\uac04", "title": "Co-occurrence: 3", "to": "\uc0c1\ud638", "value": 3, "width": 1}, {"from": "\uacf5\uac04", "title": "Co-occurrence: 1", "to": "\uc874\uc7ac", "value": 1, "width": 1}, {"from": "\uc8fc\uccb4", "title": "Co-occurrence: 10", "to": "\uc0c1\ud638", "value": 10, "width": 1}, {"from": "\uc8fc\uccb4", "title": "Co-occurrence: 4", "to": "\uc874\uc7ac", "value": 4, "width": 1}, {"from": "\uc8fc\uccb4", "title": "Co-occurrence: 4", "to": "\uc138\uacc4", "value": 4, "width": 1}, {"from": "\uc8fc\uccb4", "title": "Co-occurrence: 1", "to": "\uac10\uac01", "value": 1, "width": 1}, {"from": "\uc0c1\ud638", "title": "Co-occurrence: 8", "to": "\uc138\uacc4", "value": 8, "width": 1}, {"from": "\uc0c1\ud638", "title": "Co-occurrence: 7", "to": "\uac10\uac01", "value": 7, "width": 1}, {"from": "\uc0c1\ud638", "title": "Co-occurrence: 5", "to": "\uc874\uc7ac", "value": 5, "width": 1}, {"from": "\uc138\uacc4", "title": "Co-occurrence: 17", "to": "\uc874\uc7ac", "value": 17, "width": 1}, {"from": "\uc138\uacc4", "title": "Co-occurrence: 4", "to": "\uac10\uac01", "value": 4, "width": 1}, {"from": "\uc874\uc7ac", "title": "Co-occurrence: 4", "to": "\uac10\uac01", "value": 4, "width": 1}]);
+def check_file(filename):
+    try:
+        df = pd.read_excel(filename, engine='openpyxl')
+        print(f"{filename}: openpyxl success")
+        return
+    except Exception as e:
+        pass
+        
+    try:
+        df = pd.read_excel(filename, engine='xlrd')
+        print(f"{filename}: xlrd success")
+        return
+    except Exception as e:
+        pass
+        
+    try:
+        df = pd.read_html(filename, encoding='utf-8')
+        print(f"{filename}: html success")
+        return
+    except Exception as e:
+        pass
+        
+    print(f"{filename}: Unknown format")
 
-                  nodeColors = {};
-                  allNodes = nodes.get({ returnType: "Object" });
-                  for (nodeId in allNodes) {
-                    nodeColors[nodeId] = allNodes[nodeId].color;
-                  }
-                  allEdges = edges.get({ returnType: "Object" });
-                  // adding nodes and edges to the graph
-                  data = {nodes: nodes, edges: edges};
-
-                  var options = {
-    "configure": {
-        "enabled": false
-    },
-    "edges": {
-        "color": {
-            "inherit": true
+check_file("./퐁티_1_300.xls")`
         },
-        "smooth": {
-            "enabled": true,
-            "type": "dynamic"
-        }
-    },
-    "interaction": {
-        "dragNodes": true,
-        "hideEdgesOnDrag": false,
-        "hideNodesOnDrag": false
-    },
-    "physics": {
-        "enabled": true,
-        "repulsion": {
-            "centralGravity": 0.2,
-            "damping": 0.09,
-            "nodeDistance": 150,
-            "springConstant": 0.05,
-            "springLength": 100
-        },
-        "solver": "repulsion",
-        "stabilization": {
-            "enabled": true,
-            "fit": true,
-            "iterations": 1000,
-            "onlyDynamicEdges": false,
-            "updateInterval": 50
-        }
-    }
-};
-
-                  
-
-
-                  
-
-                  network = new vis.Network(container, data, options);
-
-                  
-
-                  
-
-                  
-
-
-                  
-
-                  return network;
-
-              }
-              drawGraph();
-        </script>
-    </body>
+      }, document.getElementById("root"));
+    </script>
+  </body>
 </html>
